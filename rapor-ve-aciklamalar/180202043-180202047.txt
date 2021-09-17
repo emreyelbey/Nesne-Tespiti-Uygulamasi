@@ -1,0 +1,372 @@
+// API KODLARI
+
+const shortid = require('shortid');
+const multer = require('multer');
+const proc = require('child_process');
+const express = require('express');
+const app = express();
+app.use(express.static('uploads'))
+app.use(express.json());
+const storage = multer.diskStorage({ 
+    destination: function(req,file,cb){
+        cb(null, './uploads');
+    },
+    filename: function(req, file, cb){
+         cb(null, shortid.generate() + '.jpg');
+    }
+});
+const upload = multer({storage: storage, limits: {
+    fileSize: 1024 * 1024 * 5
+    }
+ 
+});
+app.get('/uploads', (req, res) =>{
+    res.send(photoIds);
+});
+app.post('/uploads', upload.single('image'), (req,res) => {
+    const photoId = photoIds.find(c => c.id === parseInt('1'));
+    const python = "python3 /home/emre_yelbey/render.py ";
+    const photoin = "/home/neweges/server/uploads/" + req.file.filename + " ";
+    const photoout = "/home/neweges/server/uploads/islenmis" + req.file.filename;
+    var output = proc.execSync(python + photoin + "-out_file " + photoout ,
+     { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
+     photoId.name = output;
+     res.send(photoId);
+});
+const photoIds =[
+    { id: 1, name: 'first'}
+];
+// PORT 
+const port = 8080;
+app.listen(port, () => console.log(`listenin ${port}`));
+
+//------------------------------------------------------------------------------------
+
+// PYTHON GORUNTU ISLEME KODLARI
+
+import argparse
+from enum import Enum
+import io
+import random
+from google.cloud import vision, storage
+from PIL import Image, ImageDraw, ImageFont
+from firebase_admin import credentials, initialize_app
+
+class FeatureType(Enum):
+    BLOCK = 1
+
+def randomRenk():
+    rgbl=[255,0,0]
+    random.shuffle(rgbl)
+    return tuple(rgbl)
+
+def kutulariCiz(resimDosyasi, genislik, yukseklik, images):
+    client = vision.ImageAnnotatorClient()
+    sinirlar = []
+    isimler = []
+    k=0
+
+    with io.open(resimDosyasi, 'rb') as resimDosyasi:
+        content = resimDosyasi.read()
+
+    image = vision.Image(content=content)
+    response = client.object_localization(image=image)
+    dokuman = response.localized_object_annotations
+
+    for obje in dokuman:
+        sinirlar.append(obje.bounding_poly)
+    for obje1 in dokuman:
+        isimler.append(obje1.name)
+
+    font_path = "/home/neweges/InputSans-Regular.ttf"
+    font = ImageFont.truetype(font_path, int(genislik/30))
+
+    draw = ImageDraw.Draw(images)
+
+    for sinir in sinirlar:
+        draw.rectangle([
+            sinir.normalized_vertices[0].x * genislik, sinir.normalized_vertices[0].y * yukseklik,
+            sinir.normalized_vertices[2].x * genislik, sinir.normalized_vertices[2].y * yukseklik],
+            fill=None, outline=randomRenk(), width= int(yukseklik/120))
+        draw.text((sinir.normalized_vertices[0].x * genislik, (sinir.normalized_vertices[0].y * yukseklik - int(yukseklik/60))),
+                  isimler[k], randomRenk(), font= font)
+        k=k+1
+
+    totalobje = "toplam obje sayisi=" + str(k)
+
+    draw.text(((genislik - int(genislik*5/11) ) , int(yukseklik/200)), totalobje, "black", font= font )
+
+    return image
+
+def fotoRender(dosyaGir, dosyaCik):
+    image = Image.open(dosyaGir)
+    image = image.convert('RGB')
+    genislik, yukseklik = image.size
+    kutulariCiz(dosyaGir, genislik, yukseklik, image)
+    if dosyaCik != 0:
+        image.save(dosyaCik)
+    else:
+        image.show()
+
+def upload_blob(bucketAdi, kaynakDosyaAdi, hedefDosyaAdi):
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucketAdi)
+    blob = bucket.blob(hedefDosyaAdi)
+    blob.upload_from_filename(kaynakDosyaAdi)
+    print(blob.public_url)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('detect_file')
+    parser.add_argument('-out_file')
+    args = parser.parse_args()
+    fotoRender(args.detect_file, args.out_file)
+    upload_blob('flawless-parity-296217.appspot.com', args.out_file, args.out_file)
+
+//----------------------------------------------------------------------------------------------------------------------------------------------
+
+//REACT NATIVE KODLARI
+
+import React from 'react';
+import { ScrollView, StyleSheet, Text, View, TouchableOpacity, Button, Image, Dimensions, TouchableHighlight, PermissionsAndroid} from 'react-native';
+import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
+import RNFetchBlob from 'rn-fetch-blob';
+const windowWidth = Dimensions.get('window').width;
+const windowHeight = Dimensions.get('window').height;
+
+export async function request_storage_runtime_permission() {
+ 
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+      {
+        'title': 'ReactNativeCode Storage Permission',
+        'message': 'ReactNativeCode App needs access to your storage to download Photos.'
+      }
+    )
+  } catch (err) {
+    console.warn(err)
+  }
+}
+
+export default class App extends React.Component {
+
+  async componentDidMount() {
+
+    await request_storage_runtime_permission()
+
+  }
+
+  constructor(props) {
+    super(props);
+    this.state = {
+      resourcePath: {},
+      imageUrl: null,
+      imgUri: null,
+    };
+  }
+
+  analizEt = () => {
+    if(this.state.isUpload){
+      this.setState({
+        imgUri: this.state.imageUrl,
+        analizPress: true
+      });
+      console.log(this.state.imgUri);
+      this.state.isUpload = false;
+    }
+  }
+
+  cameraLaunch = () => {
+    let options = {
+      storageOptions: {
+        skipBackup: true,
+        path: 'images',
+      },
+    };
+    launchCamera(options, (res) => {
+      console.log('Response = ', res);
+      this.setState({
+        isUpload: false
+      });
+      if (res.didCancel) {
+        console.log('İptal edildi');
+      } else if (res.error) {
+        console.log('ImagePicker Hatası: ', res.error);
+      } else if (res.customButton) {
+        console.log('Custom butona tıklandı: ', res.customButton);
+        alert(res.customButton);
+      } else {
+        let source = res;
+        console.log('response', JSON.stringify(res));
+        let formdata = new FormData();
+        formdata.append("image", {uri: res.uri, name:res.fileName, type: 'image/jpeg'})
+        fetch('http://34.91.101.180/uploads',{
+          method: 'post',
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          body: formdata
+        }).then((response) => response.json())
+        .then((json) => {
+          this.setState({
+            imageUrl: json.name,
+            isUpload: true,
+          });
+          console.log(json.name);
+        })
+        this.setState({
+          filePath: res,
+          fileData: res.data,
+          fileUri: res.uri,
+          resourcePath: source,
+          imgUri: res.uri
+        });
+      }
+    });
+  }
+
+  imageGalleryLaunch = () => {
+    let options = {
+      storageOptions: {
+        skipBackup: true,
+        path: 'images',
+      },
+    };
+    launchImageLibrary(options, (res) => {
+      console.log('Response = ', res);
+      this.setState({
+        isUpload: false
+      });
+      if (res.didCancel) {
+        console.log('İptal edildi');
+      } else if (res.error) {
+        console.log('ImagePicker Hatası: ', res.error);
+      } else if (res.customButton) {
+        console.log('Custom butona tıklandı: ', res.customButton);
+        alert(res.customButton);
+      } else {
+        let source = res;
+        console.log('response', JSON.stringify(res));
+        
+        let formdata = new FormData();
+        formdata.append("image", {uri: res.uri, name:res.fileName, type: 'image/jpeg'})
+        fetch('http://34.91.101.180/uploads',{
+          method: 'post',
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          body: formdata
+        }).then((response) => response.json())
+        .then((json) => {
+          this.setState({
+            imageUrl: json.name,
+            isUpload: true,
+          });
+          console.log(json.name);
+        })
+        this.setState({
+          filePath: res,
+          fileData: res.data,
+          fileUri: res.uri,
+          resourcePath: source,
+          imgUri: res.uri
+        });
+      }
+    });
+  }  
+
+  downloadImage = () => {
+    if(this.state.analizPress){
+    var date = new Date();
+    var image_URL = this.state.imgUri;
+    var ext = 'jpg';
+    ext = "." + ext[0];
+    const { config, fs } = RNFetchBlob;
+    let PictureDir = fs.dirs.PictureDir
+    let options = {
+      fileCache: true,
+      addAndroidDownloads: {
+        useDownloadManager: true,
+        notification: true,
+        path: PictureDir + "/image_" + Math.floor(date.getTime()
+          + date.getSeconds() / 2) + ext,
+        description: 'Image'
+      }
+    }
+    config(options).fetch('GET', image_URL).then((res) => {
+     // Alert.alert("Image Downloaded Successfully.");
+    });
+    this.setState({
+      analizPress: false
+    });
+  }
+  }
+
+  render() {
+    return (
+    <ScrollView style={styles.scrollView}>
+      <View style={styles.container}>
+        <View style={styles.container}>
+
+      <TouchableOpacity disabled={!(this.state.analizPress)} onPress = {this.downloadImage} >
+        <Image
+            source={{ uri: this.state.imgUri }}
+            style={this.state.imgUri ? {width:windowWidth, height: windowHeight/2, resizeMode: 'contain', marginBottom: windowHeight/200*4} :null}
+        />
+        <Text style= {this.state.imgUri ? null :{padding:windowHeight/15, textAlign: 'center', fontSize: windowWidth/20, width:windowWidth }}>  {this.state.imgUri ? null : "Başlamak için bir resim yükleyin."}</Text>
+      </TouchableOpacity>
+
+        <TouchableOpacity onPress = {this.cameraLaunch} style={styles.button}  >
+            <Text style={styles.buttonText}>Kamerayı başlat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={this.imageGalleryLaunch} style={styles.button}  >
+            <Text style={styles.buttonText}>Galeriden fotoğraf seç</Text>
+        </TouchableOpacity>
+        <TouchableHighlight disabled={!(this.state.isUpload)}  onPress={this.analizEt} style={this.state.isUpload ? styles.button : styles.button1} >
+            <Text style={styles.buttonText}>Analiz et</Text>
+        </TouchableHighlight>
+      
+        </View>
+      </View>
+    </ScrollView>
+    );
+  }
+}
+
+const styles = StyleSheet.create({
+  scrollView: {
+    backgroundColor: '#e5c3d1'
+  },
+  container: {
+    flex: 1,
+    padding: windowHeight/200*4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e5c3d1'
+  },
+  button: {
+    width: windowWidth/5*4,
+    height: windowHeight/50*4,
+    backgroundColor: '#613f75',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: windowWidth/200*4,
+    marginBottom:windowHeight/200*4
+  },
+  button1: {
+    opacity: 0.3,
+    width: windowWidth/5*4,
+    height: windowHeight/50*4,
+    backgroundColor: '#613f75',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: windowWidth/200*4,
+    marginBottom:windowHeight/200*4
+  },
+  buttonText: {
+    textAlign: 'center',
+    fontSize: windowWidth/100*4,
+    color: '#fff'
+  },
+});
